@@ -1,6 +1,6 @@
 from omegaconf import OmegaConf
 
-# Имя переменной должно быть именно config (не conf)
+
 config = OmegaConf.create({
     "seed": 42,
     "mode": "K_fold",
