@@ -139,7 +139,6 @@ def ml_train(config):
     X_val = val_loader.dataset.tensors[0].numpy()
     y_val = val_loader.dataset.tensors[1].numpy()
 
-    model.fit(X_train, y_train)
     y_pred=model.predict(X_val)
     #print(accuracy_score(y_val,y_pred))
     best_model = model.best_estimator_
