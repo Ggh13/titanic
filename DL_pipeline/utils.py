@@ -22,46 +22,7 @@ import torch.nn as nn
 from sklearn.model_selection import StratifiedKFold
 from models import ClassifyModel
 
-def set_seed(seed: int):
-    '''Set a random seed for complete reproducibility.'''
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-    os.environ['PYTHONHASHSEED'] = str(seed)
-
-
-def get_transforms(config):
-    numeric_features  = ['Age', 'Fare', 'SibSp', 'Parch', 'FamilySize']
-    categorical_features = ['Pclass', 'Sex', 'Embarked', 'IsAlone']
-
-    numeric_transformer = Pipeline(
-        steps = [
-            ('imputer', SimpleImputer(strategy='mean')),
-            ('scaler', StandardScaler())
-        ]
-    )
-
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='most_frequent')),
-        ('onehot', OneHotEncoder(drop='first', handle_unknown='ignore'))
-    ])
-
-    preprocessor = ColumnTransformer(
-        transformers = [
-            ('num', numeric_transformer, numeric_features),
-            ('cat', categorical_transformer, categorical_features)
-        ],
-        remainder='drop'
-    )
-    full_pipeline = Pipeline(steps=[
-        ('preprocessor', preprocessor)
-    ])
-    return full_pipeline
-
+from data_prepearing import set_seed, get_transforms, data_engineering, get_data_loaders
 
 
 def train(model, train_loader, val_loader, config):
@@ -218,35 +179,6 @@ def KFoldTraining(config):
         wandb.finish()
 
     
-def data_engineering(df):
-    df["FamilySize"] = df["SibSp"] + df["Parch"] 
-    df['IsAlone'] = (df['FamilySize'] == 0).astype(int)
-
-    return df
-
-def get_data_loaders(config):
-    pipeline = get_transforms(config)
-    train_df = pd.read_csv(config.paths.train_csv)
-    train_df = data_engineering(train_df)
-
-    pipeline.fit(train_df)
-
-    if hasattr(X_full, "toarray"):
-        X_full = X_full.toarray()
-    y_full = train_df['Survived'].values
-
-
-
-    X_train, X_val, y_train, y_val = train_test_split(X_full, y_full, test_size=config.data.kfold.val_size, random_state=config.seed)
-
-    train_dataset = TensorDataset(torch.tensor(X_train, dtype=torch.float32), torch.tensor(y_train, dtype=torch.long))
-    val_dataset = TensorDataset(torch.tensor(X_val, dtype=torch.float32), torch.tensor(y_val, dtype=torch.long))
-
-    train_loader = DataLoader(train_dataset, batch_size=config.training.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.training.batch_size, shuffle=False)
-
-    return train_loader, val_loader, pipeline
-
 def get_model(config, type: str = 'classic', in_features: int = 9):
     if type == 'classic':
         return ClassifyModel(in_features=in_features)

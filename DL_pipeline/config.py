@@ -3,7 +3,7 @@ from omegaconf import OmegaConf
 
 config = OmegaConf.create({
     "seed": 42,
-    "mode": "K_fold",
+    "mode": "classic_ml",
     "device": "cuda",
     "in_features": 9,
     "training": {
@@ -26,5 +26,9 @@ config = OmegaConf.create({
     },
     "logging": {
         "wandb_project_name": "titanic-classification"
-    }
+    },
+    "files": {
+    "data": "./data/",     
+    "train": "train.csv"  
+},
 })
