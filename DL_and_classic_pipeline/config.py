@@ -5,7 +5,6 @@ config = OmegaConf.create({
     "seed": 42,
     "mode": "classic_ml",
     "device": "cuda",
-    "in_features": 9,
     "training": {
         "debug": False,
         "number_of_debug_samples": 1000,

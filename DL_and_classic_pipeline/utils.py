@@ -104,7 +104,7 @@ def Predict_kfold(config):
         
         X_tensor = torch.tensor(X_test, dtype=torch.float32).to(config.device)
 
-        model = ClassifyModel(in_features=config.in_features).to(config.device)
+        model = ClassifyModel(in_features=X_test.shape[1]).to(config.device)
         model.load_state_dict(torch.load(model_path, map_location=config.device))
         model.eval()
 
@@ -179,7 +179,7 @@ def KFoldTraining(config):
         wandb.finish()
 
     
-def get_model(config, type: str = 'classic', in_features: int = 9):
+def get_model(config, type: str = 'classic', in_features: int = -1):
     if type == 'classic':
         return ClassifyModel(in_features=in_features)
     else:
@@ -195,7 +195,7 @@ def ClassicTraining(config):
     train_loader, val_loader, pipeline = get_data_loaders(config)
     torch.cuda.empty_cache()
 
-    model = get_model(config, type = 'classic', in_features = config.in_features)
+    model = get_model(config, type = 'classic', in_features = train_loader.dataset.tensors[0].shape[1])
     model = model.to(config.device)
     train(model, train_loader, val_loader, config)
 

@@ -31,7 +31,18 @@ warnings.filterwarnings('ignore')
 def get_model(config, type: str = 'LogisticRegression', in_features: int = 9):
     model = ""
     if type == 'DecisionTree':
-        model = DecisionTreeClassifier()  
+        param_grid = {
+        'max_depth': [3, 5, 7, 10, None],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4],
+        }
+        model = GridSearchCV(
+            estimator=DecisionTreeClassifier(random_state=42),
+            param_grid=param_grid,
+            cv=5,
+            scoring='accuracy',
+            n_jobs=1
+        )
 
     elif type == 'LogisticRegression':
         param_grid = {
@@ -127,7 +138,7 @@ def ml_train(config):
     train_loader, val_loader, pipeline = get_data_loaders(config)
     torch.cuda.empty_cache()
 
-    model = get_model(config, type = 'Xgboost', in_features = config.in_features)
+    model = get_model(config, type = 'DecisionTree', in_features = -1)
     #model = model.to(config.device)
 
     X_train = train_loader.dataset.tensors[0].numpy()
