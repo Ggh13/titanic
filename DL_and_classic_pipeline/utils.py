@@ -93,6 +93,8 @@ def Predict_kfold(config):
 
     all_fold_probs = []
 
+
+    
     for fold in range(1, n_splits + 1):
         pipeline_path = os.path.join(config.paths.checkpoint_dir, f"preprocessor_fold_{fold}.pkl")
         model_path = os.path.join(config.paths.checkpoint_dir, f"model_fold_{fold}.pth")
@@ -124,6 +126,10 @@ def Predict_kfold(config):
     print(f"Готово! Предсказания сохранены в submission.csv (всего записей: {len(submission)})")
 
 def KFoldTraining(config):
+    print(f"\n{'='*50}")
+    print(f"Начало обучения: KFoldTraining (DL, {config.data.kfold.n_splits} фолдов)")
+    print(f"{'='*50}\n")
+
     if not os.path.exists(config.paths.checkpoint_dir):
         os.makedirs(config.paths.checkpoint_dir)
     
@@ -137,8 +143,12 @@ def KFoldTraining(config):
     skf = StratifiedKFold(n_splits=config.data.kfold.n_splits, shuffle=True, random_state=config.seed)
 
 
+ 
+    test_path = "./data/test.csv"
+    test_df = pd.read_csv(test_path)
+    test_df = data_engineering(test_df)
+    all_fold_probs = []
 
-    
     for fold, (train_idx, val_idx) in enumerate(skf.split(train_df, y_full)):
         print(f"\n============ Fold {fold + 1}/{config.data.kfold.n_splits} ============")
         
@@ -176,8 +186,31 @@ def KFoldTraining(config):
         torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, f'model_fold_{fold + 1}.pth'))
         joblib.dump(pipeline, os.path.join(config.paths.checkpoint_dir, f'preprocessor_fold_{fold + 1}.pkl'))
         
-        wandb.finish()
 
+
+
+        X_test = pipeline.transform(test_df)
+        if hasattr(X_test, "toarray"):
+            X_test = X_test.toarray()
+        
+        X_tensor = torch.tensor(X_test, dtype=torch.float32).to(config.device)
+        
+        model.eval()
+        with torch.no_grad():
+            logits = model(X_tensor)
+            probs = torch.sigmoid(logits).cpu().numpy().flatten()
+            all_fold_probs.append(probs)
+
+        wandb.finish()
+    mean_probs = np.mean(all_fold_probs, axis=0)
+    final_predictions = (mean_probs >= 0.5).astype(int)
+
+    submission = pd.DataFrame({
+        'PassengerId': test_df['PassengerId'],
+        'Survived': final_predictions
+    })
+    submission.to_csv('submission.csv', index=False)
+    print(f"Submission сохранён! Всего записей: {len(submission)}")
     
 def get_model(config, type: str = 'classic', in_features: int = -1):
     if type == 'classic':
@@ -186,24 +219,69 @@ def get_model(config, type: str = 'classic', in_features: int = -1):
         raise ValueError(f'Invalid model type: {type}')
 
 def ClassicTraining(config):
+    print(f"\n{'='*50}")
+    print("Начало обучения: ClassicTraining (DL, 1 модель)")
+    print(f"{'='*50}\n")
 
     wandb.init(project=config.logging.wandb_project_name)
 
     if not os.path.exists(config.paths.checkpoint_dir):
         os.makedirs(config.paths.checkpoint_dir)
-    
-    train_loader, val_loader, pipeline = get_data_loaders(config)
+
+    # Получаем сырые данные и необученный препроцессор
+    X_train_raw, X_val_raw, y_train, y_val, pipeline = get_data_loaders(config)
     torch.cuda.empty_cache()
 
-    model = get_model(config, type = 'classic', in_features = train_loader.dataset.tensors[0].shape[1])
+    # Обучаем препроцессор только на train (без утечки из val)
+    X_train = pipeline.fit_transform(X_train_raw)
+    X_val = pipeline.transform(X_val_raw)
+
+    if hasattr(X_train, "toarray"):
+        X_train = X_train.toarray()
+        X_val = X_val.toarray()
+
+    train_dataset = TensorDataset(
+        torch.tensor(X_train, dtype=torch.float32),
+        torch.tensor(y_train, dtype=torch.long)
+    )
+    val_dataset = TensorDataset(
+        torch.tensor(X_val, dtype=torch.float32),
+        torch.tensor(y_val, dtype=torch.long)
+    )
+
+    train_loader = DataLoader(train_dataset, batch_size=config.training.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.training.batch_size, shuffle=False)
+
+    model = get_model(config, type='classic', in_features=X_train.shape[1])
     model = model.to(config.device)
     train(model, train_loader, val_loader, config)
 
-
     torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, 'model_weights.pth'))
-    
-    # 2. Сохраняем пайплайн (скейлер, медианы, one-hot-кодировщик)
     joblib.dump(pipeline, os.path.join(config.paths.checkpoint_dir, 'preprocessor.pkl'))
+
+    # Предсказание на test.csv
+    test_path = config.paths.test_csv
+    test_df = pd.read_csv(test_path)
+    test_df = data_engineering(test_df)
+
+    X_test = pipeline.transform(test_df)
+    if hasattr(X_test, "toarray"):
+        X_test = X_test.toarray()
+
+    X_tensor = torch.tensor(X_test, dtype=torch.float32).to(config.device)
+
+    model.eval()
+    with torch.no_grad():
+        logits = model(X_tensor)
+        probs = torch.sigmoid(logits).cpu().numpy().flatten()
+        test_predictions = (probs >= 0.5).astype(int)
+
+    submission = pd.DataFrame({
+        'PassengerId': test_df['PassengerId'],
+        'Survived': test_predictions
+    })
+    submission.to_csv('submission.csv', index=False)
+    print(f"Submission сохранён! Всего записей: {len(submission)}")
 
     wandb.finish()
     print("Модель и препроцессор сохранены!")

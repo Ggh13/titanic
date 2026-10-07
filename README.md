@@ -1,5 +1,19 @@
 # Titanic Survival Prediction
 
+
+## Сравнение моделей
+
+| Модель          | Validation Accuracy | Leaderboard Score |
+|-----------------|---------------------|-------------------|
+| DecisionTree    | 0.7933              | 0          |         
+| XGBoost         | 0.8189              | 0          |
+| CatBoost        | 0.825              | 0             |
+| RandomForest    | 0.8045              | 0             |
+| DNN (1 фолд)    | 0             | 0             |
+| DNN (5 фолдов)  | 0          | 0           |
+
+**Финальный выбор:** DNN с 5 фолдами — лучший leaderboard score (0.798).
+
 ## Структура проекта
 
 | Файл | Описание |

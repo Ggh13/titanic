@@ -4,6 +4,7 @@ from omegaconf import OmegaConf
 config = OmegaConf.create({
     "seed": 42,
     "mode": "classic_ml",
+    "classic_mode": "CatBoost",
     "device": "cuda",
     "training": {
         "debug": False,
@@ -22,6 +23,7 @@ config = OmegaConf.create({
     "paths": {
         "checkpoint_dir": "./checkpoints",
         "train_csv": "./data/train.csv",
+        "test_csv": "./data/test.csv",
     },
     "logging": {
         "wandb_project_name": "titanic-classification"

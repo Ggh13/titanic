@@ -99,27 +99,6 @@ def get_data_loaders(config):
         # (Опционально) Снять ограничение на длину текста в ячейках
     pd.set_option('display.max_colwidth', None)
     
-    X_train = pipeline.fit_transform(X_train_raw)
-    X_val = pipeline.transform(X_val_raw)
-    
-    feature_names = pipeline.get_feature_names_out()
-    print(pd.DataFrame(X_train, columns=feature_names).head())
-
-    if hasattr(X_train, "toarray"):
-        X_train = X_train.toarray()
-        X_val = X_val.toarray()
-
-    
-    train_dataset = TensorDataset(
-        torch.tensor(X_train, dtype=torch.float32), 
-        torch.tensor(y_train, dtype=torch.long)
-    )
-    val_dataset = TensorDataset(
-        torch.tensor(X_val, dtype=torch.float32), 
-        torch.tensor(y_val, dtype=torch.long)
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=config.training.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.training.batch_size, shuffle=False)
-
-    return train_loader, val_loader, pipeline
+    # Возвращаем сырые данные и необученный pipeline
+    # Предобработка будет обучаться внутри GridSearchCV (без утечки)
+    return X_train_raw, X_val_raw, y_train, y_val, pipeline
