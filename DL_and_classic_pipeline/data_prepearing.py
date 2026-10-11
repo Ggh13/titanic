@@ -36,6 +36,15 @@ def set_seed(seed: int):
 
 
 def get_transforms(config):
+    """
+    Создаёт sklearn Pipeline для предобработки данных.
+
+    Args:
+        config: конфигурация (не используется внутри, но нужна для единообразия)
+
+    Returns:
+        Pipeline: пайплайн с ColumnTransformer (числовые + категориальные признаки)
+    """
     numeric_features  = ['Age', 'Fare', 'SibSp', 'Parch', 'FamilySize']
     categorical_features = ['Pclass', 'Sex', 'Embarked', 'IsAlone']
 
@@ -65,6 +74,15 @@ def get_transforms(config):
 
 
 def data_engineering(df):
+    """
+    Создаёт новые признаки и кодирует категориальные.
+
+    Args:
+        df: DataFrame с исходными данными
+
+    Returns:
+        DataFrame: с добавленными FamilySize, IsAlone и закодированными Sex, Embarked
+    """
     df["FamilySize"] = df["SibSp"] + df["Parch"] 
     df['IsAlone'] = (df['FamilySize'] == 0).astype(int)
 
@@ -74,6 +92,19 @@ def data_engineering(df):
     return df
 
 def get_data_loaders(config):
+    """
+    Загружает train.csv, применяет data_engineering и разделяет на train/val.
+
+    Args:
+        config: конфигурация с paths.train_csv, data.kfold.val_size, seed
+
+    Returns:
+        X_train_raw: сырые признаки train (без Survived)
+        X_val_raw: сырые признаки val (без Survived)
+        y_train: целевая переменная train
+        y_val: целевая переменная val
+        pipeline: необученный препроцессор
+    """
     pipeline = get_transforms(config)
     df = pd.read_csv(config.paths.train_csv)
     df = data_engineering(df)

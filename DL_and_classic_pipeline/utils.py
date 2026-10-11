@@ -26,6 +26,18 @@ from data_prepearing import set_seed, get_transforms, data_engineering, get_data
 
 
 def train(model, train_loader, val_loader, config):
+    """
+    Обучает нейросеть с early stopping и ReduceLROnPlateau.
+
+    Args:
+        model: модель PyTorch
+        train_loader: DataLoader для обучающих данных
+        val_loader: DataLoader для валидационных данных
+        config: конфигурация с training.lr, training.epochs, ...
+
+    Returns:
+        float: accuracy на валидационной выборке за последнюю эпоху
+    """
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.training.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.05)
@@ -93,6 +105,13 @@ def train(model, train_loader, val_loader, config):
     return val_acc
 
 def Predict_kfold(config):
+    """
+    Загружает обученные модели фолдов и делает предсказание на test.csv.
+    Усредняет вероятности всех фолдов и сохраняет submission.csv.
+
+    Args:
+        config: конфигурация с data.kfold.n_splits, paths.checkpoint_dir
+    """
     test_path = "./data/test.csv"
     test_df = pd.read_csv(test_path)
     test_df = data_engineering(test_df)
@@ -134,6 +153,14 @@ def Predict_kfold(config):
     print(f"Готово! Предсказания сохранены в submission.csv (всего записий: {len(submission)})")
 
 def KFoldTraining(config):
+    """
+    K-fold обучение нейросети.
+    Обучает модель на каждом фолде, сохраняет чекпоинты,
+    усредняет предсказания и сохраняет submission.csv.
+
+    Args:
+        config: конфигурация с data.kfold.n_splits, training.*, paths.*
+    """
     print(f"\n{'='*50}")
     print(f"Начало обучения: KFoldTraining (DL, {config.data.kfold.n_splits} фолдов)")
     print(f"{'='*50}\n")
@@ -191,6 +218,8 @@ def KFoldTraining(config):
         in_features = X_train.shape[1]
         model = get_model(config, in_features=in_features, type='classic').to(config.device)
         print("У модели столько слоев:", model.hidden_dim)
+        print("У модели Dropout:", model.dropout)
+        print("У модели num_layers:", model.num_layers)
         best_val_acc = train(model, train_loader, val_loader, config)
         fold_accuracies.append(best_val_acc)
         print(f"Fold {fold + 1} — Accuracy: {best_val_acc:.4f}")
@@ -235,12 +264,34 @@ def KFoldTraining(config):
     print(f"Submission сохранён! Всего записей: {len(submission)}")
     
 def get_model(config, type: str = 'classic', in_features: int = -1):
+    """Создаёт нейросеть ClassifyModel с параметрами из конфигурации.
+
+    Args:
+        config: конфигурация с model.hidden_dim, model.num_layers, model.dropout
+        type: тип модели ('classic')
+        in_features: количество входных признаков
+
+    Returns:
+        ClassifyModel: экземпляр нейросети
+    """
     if type == 'classic':
-        return ClassifyModel(in_features=in_features)
+        return ClassifyModel(
+            in_features=in_features,
+            hidden_dim=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            dropout=config.model.dropout
+        )
     else:
         raise ValueError(f'Invalid model type: {type}')
 
 def ClassicTraining(config):
+    """
+    Обучает одну нейросеть с разделением train/val.
+    Сохраняет модель, препроцессор и submission.csv.
+
+    Args:
+        config: конфигурация с data.kfold.val_size, training.*, paths.*
+    """
     print(f"\n{'='*50}")
     print("Начало обучения: ClassicTraining (DL, 1 модель)")
     print(f"{'='*50}\n")

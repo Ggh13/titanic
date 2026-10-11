@@ -10,6 +10,7 @@ seaborn>=0.13.0
 # Gradient Boosting
 catboost>=1.2.0
 xgboost>=2.0.0
+lightgbm>=4.0.0
 
 # Config & Logging
 omegaconf>=2.3.0
