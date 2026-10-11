@@ -31,7 +31,8 @@ def train(model, train_loader, val_loader, config):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.05)
 
     best_val_loss = float('inf')
-
+    epochs_without_improvement = 0
+    early_stopping_patience = 30
     for epoch in range(config.training.epochs):
         model.train()
         train_loss = 0.0
@@ -68,14 +69,7 @@ def train(model, train_loader, val_loader, config):
 
         val_loss /= len(val_loader.dataset)
         val_acc = correct / total
-        
         scheduler.step(val_loss)
-        
-        
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, 'best_model.pth'))
 
         wandb.log({
             "epoch": epoch,
@@ -84,6 +78,19 @@ def train(model, train_loader, val_loader, config):
             "val_acc": val_acc,
             "lr": optimizer.param_groups[0]['lr']
         })
+
+        # Early Stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
+            torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, 'best_model.pth'))
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"Early stopping на эпохе {epoch + 1} (val_loss не улучшалась {early_stopping_patience} эпох)")
+                break
+
+    return val_acc
 
 def Predict_kfold(config):
     test_path = "./data/test.csv"
@@ -107,6 +114,7 @@ def Predict_kfold(config):
         X_tensor = torch.tensor(X_test, dtype=torch.float32).to(config.device)
 
         model = ClassifyModel(in_features=X_test.shape[1]).to(config.device)
+        
         model.load_state_dict(torch.load(model_path, map_location=config.device))
         model.eval()
 
@@ -115,15 +123,15 @@ def Predict_kfold(config):
             probs = torch.sigmoid(logits).cpu().numpy().flatten()
             all_fold_probs.append(probs)
 
-        mean_probs = np.mean(all_fold_probs, axis=0)
-        final_predictions = (mean_probs >= 0.5).astype(int)
+    mean_probs = np.mean(all_fold_probs, axis=0)
+    final_predictions = (mean_probs >= 0.5).astype(int)
 
-        submission = pd.DataFrame({
-            'PassengerId': test_df['PassengerId'],
-            'Survived': final_predictions
-        })
+    submission = pd.DataFrame({
+        'PassengerId': test_df['PassengerId'],
+        'Survived': final_predictions
+    })
     submission.to_csv('submission.csv', index=False)
-    print(f"Готово! Предсказания сохранены в submission.csv (всего записей: {len(submission)})")
+    print(f"Готово! Предсказания сохранены в submission.csv (всего записий: {len(submission)})")
 
 def KFoldTraining(config):
     print(f"\n{'='*50}")
@@ -148,8 +156,10 @@ def KFoldTraining(config):
     test_df = pd.read_csv(test_path)
     test_df = data_engineering(test_df)
     all_fold_probs = []
-
+    fold_accuracies = []
+    
     for fold, (train_idx, val_idx) in enumerate(skf.split(train_df, y_full)):
+        set_seed(config.seed + fold)
         print(f"\n============ Fold {fold + 1}/{config.data.kfold.n_splits} ============")
         
         wandb.init(
@@ -180,8 +190,10 @@ def KFoldTraining(config):
 
         in_features = X_train.shape[1]
         model = get_model(config, in_features=in_features, type='classic').to(config.device)
-
-        train(model, train_loader, val_loader, config)
+        print("У модели столько слоев:", model.hidden_dim)
+        best_val_acc = train(model, train_loader, val_loader, config)
+        fold_accuracies.append(best_val_acc)
+        print(f"Fold {fold + 1} — Accuracy: {best_val_acc:.4f}")
 
         torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, f'model_fold_{fold + 1}.pth'))
         joblib.dump(pipeline, os.path.join(config.paths.checkpoint_dir, f'preprocessor_fold_{fold + 1}.pkl'))
@@ -202,8 +214,18 @@ def KFoldTraining(config):
             all_fold_probs.append(probs)
 
         wandb.finish()
+
+    # Итоговые метрики K-fold
     mean_probs = np.mean(all_fold_probs, axis=0)
     final_predictions = (mean_probs >= 0.5).astype(int)
+
+    print(f"\n{'='*50}")
+    print(f"K-fold Cross-Validation Результаты ({config.data.kfold.n_splits} фолдов):")
+    print(f"  Mean Accuracy:  {np.mean(fold_accuracies):.4f}")
+    print(f"  Std Accuracy:   {np.std(fold_accuracies):.4f}")
+    print(f"  Min Accuracy:   {np.min(fold_accuracies):.4f}")
+    print(f"  Max Accuracy:   {np.max(fold_accuracies):.4f}")
+    print(f"{'='*50}\n")
 
     submission = pd.DataFrame({
         'PassengerId': test_df['PassengerId'],

@@ -1,7 +1,9 @@
 import random
 import numpy as np
+import torch
 import os
 import wandb
+
 
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
@@ -9,6 +11,10 @@ from omegaconf import OmegaConf
 import pandas as pd
 
 import joblib
+import torch.nn as nn
+
+from sklearn.model_selection import StratifiedKFold
+from models import ClassifyModel
 
 from data_prepearing import set_seed, get_transforms, data_engineering, get_data_loaders
 
@@ -19,103 +25,168 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from catboost import CatBoostClassifier
 from xgboost import XGBClassifier
-from sklearn.pipeline import Pipeline
 
 import warnings
 warnings.filterwarnings('ignore')
-
-
-def ml_train(config):
-    print(f"\n{'='*50}")
-    print(f"Начало обучения модели: {config.classic_mode}")
-    print(f"{'='*50}\n")
-
-    wandb.init(project=config.logging.wandb_project_name)
-
-    if not os.path.exists(config.paths.checkpoint_dir):
-        os.makedirs(config.paths.checkpoint_dir)
-
-    # Получаем сырые данные и необученный препроцессор
-    X_train_raw, X_val_raw, y_train, y_val, preprocessor = get_data_loaders(config)
-
-    # Создаём базовую модель и param_grid в зависимости от типа
-    if config.classic_mode == 'DecisionTree':
-        base_model = DecisionTreeClassifier(random_state=42)
+def get_model(config, type: str = 'LogisticRegression', in_features: int = 9):
+    model = ""
+    if type == 'DecisionTree':
         param_grid = {
-            'max_depth': [3, 5, 7, 10, None],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
+        'max_depth': [3, 5, 7, 10, None],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4],
         }
-    elif config.classic_mode == 'LogisticRegression':
-        base_model = LogisticRegression(max_iter=1000)
+        model = GridSearchCV(
+            estimator=DecisionTreeClassifier(random_state=42),
+            param_grid=param_grid,
+            cv=5,
+            scoring='accuracy',
+            n_jobs=1
+        )
+
+    elif type == 'LogisticRegression':
         param_grid = {
             'C': [0.01, 0.1, 1.0, 10.0],
             'penalty': ['l2'],
             'solver': ['liblinear', 'saga']
         }
-    elif config.classic_mode == "randomForest":
-        base_model = RandomForestClassifier(random_state=42)
+
+        grid_search = GridSearchCV(
+            estimator=LogisticRegression(max_iter=1000),
+            param_grid=param_grid,
+            cv=5,               
+            scoring='accuracy', 
+            n_jobs=-1           
+        )
+        model = grid_search
+    elif type == "randomForest":
         param_grid = {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [None, 5, 10, 15],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
-            'max_features': ['sqrt', 'log2'],
+            'n_estimators': [50, 100, 200],  # Количество деревьев в лесу
+            'max_depth': [None, 5, 10, 15],  # Максимальная глубина деревьев
+            'min_samples_split': [
+                2,
+                5,
+                10,
+            ],  # Минимальное число объектов для разбиения узла
+            'min_samples_leaf': [1, 2, 4],  # Минимальное число объектов в листе
+            'max_features': ['sqrt', 'log2'],  # Число признаков для выбора при сплите
         }
-    elif config.classic_mode == "CatBoost":
-        base_model = CatBoostClassifier(random_state=42, verbose=0)
+
+        # 2. Инициализируем базовую модель
+        rf = RandomForestClassifier(random_state=42)
+
+        # 3. Настраиваем GridSearch
+        grid_search = GridSearchCV(
+            estimator=rf,
+            param_grid=param_grid,
+            cv=5,  # 5-фолдовая кросс-валидация
+            scoring='accuracy',
+            n_jobs=1,  # Используем 1 поток во избежание проблем с памятью на Windows
+        )
+        model = grid_search
+    elif type == "CatBoost":
         param_grid = {
-            'iterations': [100, 200, 300],
-            'depth': [4, 6, 8],
-            'learning_rate': [0.01, 0.05, 0.1],
-            'l2_leaf_reg': [1, 3, 5],
+            'iterations': [100, 200, 300],  # Аналог n_estimators (количество деревьев)
+            'depth': [4, 6, 8],  # Глубина деревьев (обычно 4-6 оптимально)
+            'learning_rate': [0.01, 0.05, 0.1],  # Скорость обучения
+            'l2_leaf_reg': [1, 3, 5],  # L2-регуляризация (защита от переобучения)
         }
-    elif config.classic_mode == "Xgboost":
-        base_model = XGBClassifier(random_state=42, eval_metric='logloss')
+
+        # 2. Инициализация (verbose=0 выключает спам логов в консоль)
+        cb = CatBoostClassifier(random_state=42, verbose=0)
+
+        # 3. GridSearch
+        grid_search_cb = GridSearchCV(
+            estimator=cb,
+            param_grid=param_grid,
+            cv=5,
+            scoring='accuracy',
+            n_jobs=1,  # Защита от ошибки с памятью на Windows
+        )
+        model = grid_search_cb
+    elif type == "Xgboost":
         param_grid = {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [3, 5, 7],
-            'learning_rate': [0.01, 0.05, 0.1],
-            'subsample': [0.8, 1.0],
-            'colsample_bytree': [0.8, 1.0],
+            'n_estimators': [50, 100, 200],  # Количество деревьев
+            'max_depth': [3, 5, 7],  # Глубина деревьев
+            'learning_rate': [0.01, 0.05, 0.1],  # Скорость обучения
+            'subsample': [0.8, 1.0],  # Доля выборки для построения дерева
+            'colsample_bytree': [0.8, 1.0],  # Доля признаков для каждого дерева
         }
+
+        # 2. Инициализация
+        xgb = XGBClassifier(random_state=42, eval_metric='logloss')
+
+        # 3. GridSearch
+        grid_search_xgb = GridSearchCV(
+            estimator=xgb,
+            param_grid=param_grid,
+            cv=5,
+            scoring='accuracy',
+            n_jobs=1,
+        )
+        model = grid_search_xgb
     else:
-        raise ValueError(f'Invalid model type: {config.classic_mode}')
+        raise ValueError(f'Invalid model type: {type}')
+    return model
+
+def ml_train(config):
+    wandb.init(project=config.logging.wandb_project_name)
+
+    if not os.path.exists(config.paths.checkpoint_dir):
+        os.makedirs(config.paths.checkpoint_dir)
+    
+    X_train, X_val, y_train, y_val, pipeline = get_data_loaders(config)
+    torch.cuda.empty_cache()
+
+    model = get_model(config, type = config.type_classic, in_features = -1)
+    #model = model.to(config.device)
+
+    X_train = pipeline.fit_transform(X_train)
+
+    X_val = pipeline.transform(X_val)
 
 
-    full_pipeline = Pipeline([
-        ('preprocessor', preprocessor),
-        ('model', base_model)
-    ])
+    model.fit(X_train, y_train)
 
 
-    param_grid_prefixed = {f'model__{key}': value for key, value in param_grid.items()}
+    
 
-    model = GridSearchCV(
-        estimator=full_pipeline,
-        param_grid=param_grid_prefixed,
-        cv=5,
-        scoring='accuracy',
-        n_jobs=1
-    )
-
-
-    model.fit(X_train_raw, y_train)
-
-
-    y_pred = model.predict(X_val_raw)
-    print(f"Accuracy на валидации: {accuracy_score(y_val, y_pred):.4f}")
+    y_pred=model.predict(X_val)
+    print(f"Accuracy score: {accuracy_score(y_val,y_pred)}")
     best_model = model.best_estimator_
 
-    print("Лучшие параметры:", model.best_params_)
+    # 1. Вывести только те параметры, которые подбирались через сетку (param_grid)
+    print("Лучшие подломанные параметры:", model.best_params_)
+
+    # 2. Вывести абсолютно все параметры объекта лучшей модели
+    print("Все параметры модели:", best_model.get_params())
+
+    # 3. (Опционально) Вывести средний результат (Accuracy) лучшей модели на кросс-валидации
     print("Лучший score на кросс-валидации:", model.best_score_)
+    if hasattr(model, 'state_dict'):
+        torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, 'model_weights.pth'))
+    else:
+        joblib.dump(model, os.path.join(config.paths.checkpoint_dir, 'model_classic.pkl'))
+    
+    # 2. Сохраняем пайплайн (скейлер, медианы, one-hot-кодировщик)
+    joblib.dump(pipeline, os.path.join(config.paths.checkpoint_dir, 'preprocessor_classic.pkl'))
+
+
+
 
 
     test_path = config.paths.test_csv
     test_df = pd.read_csv(test_path)
     test_df = data_engineering(test_df)
+    
 
-    test_predictions = best_model.predict(test_df)
+    X_test = pipeline.transform(test_df)
+    if hasattr(X_test, "toarray"):
+        X_test = X_test.toarray()
+    
+
+    test_predictions = best_model.predict(X_test)
+    
 
     submission = pd.DataFrame({
         'PassengerId': test_df['PassengerId'],
@@ -125,8 +196,13 @@ def ml_train(config):
     print(f"Submission сохранён! Всего записей: {len(submission)}")
 
 
-    joblib.dump(model, os.path.join(config.paths.checkpoint_dir, 'model_classic.pkl'))
-    joblib.dump(preprocessor, os.path.join(config.paths.checkpoint_dir, 'preprocessor_classic.pkl'))
+    if hasattr(model, 'state_dict'):
+        torch.save(model.state_dict(), os.path.join(config.paths.checkpoint_dir, 'model_weights.pth'))
+    else:
+        joblib.dump(model, os.path.join(config.paths.checkpoint_dir, 'model_classic.pkl'))
+    
+    joblib.dump(pipeline, os.path.join(config.paths.checkpoint_dir, 'preprocessor_classic.pkl'))
 
     wandb.finish()
     print("Модель и препроцессор сохранены!")
+

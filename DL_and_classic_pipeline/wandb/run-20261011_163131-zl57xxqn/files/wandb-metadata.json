@@ -1,0 +1,17 @@
+{
+  "os":  "Windows-10-10.0.19045-SP0",
+  "python":  "CPython 3.11.8",
+  "startedAt":  "2026-10-11T13:31:31.696113Z",
+  "program":  "C:\\i\\projects\\titanic\\DL_and_classic_pipeline\\main.py",
+  "codePath":  "DL_and_classic_pipeline\\main.py",
+  "codePathLocal":  "main.py",
+  "git":  {
+    "remote":  "https://github.com/Ggh13/titanic.git",
+    "commit":  "d8515471f8e436752a24bf5f2aea53fbfd343e19"
+  },
+  "email":  "Roma_buzhor@mail.ru",
+  "root":  "C:\\i\\projects\\titanic\\DL_and_classic_pipeline",
+  "host":  "DESKTOP-3O1EM4I",
+  "executable":  "C:\\Users\\Faceless\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+  "writerId":  "u2k63squi00ab34l3chtv9k3big2ihrn"
+}

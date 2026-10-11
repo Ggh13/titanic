@@ -3,20 +3,19 @@ from omegaconf import OmegaConf
 
 config = OmegaConf.create({
     "seed": 42,
-    "mode": "classic_ml",
-    "classic_mode": "CatBoost",
+    "mode": "K_fold",
+    "type_classic": "CatBoost",
     "device": "cuda",
     "training": {
         "debug": False,
         "number_of_debug_samples": 1000,
         "lr": 1e-3,
-        "epochs": 60,
+        "epochs": 70,
         "batch_size": 32,
     },
     "data": {
         "kfold": {
-            "use_kfold": True,
-            "n_splits": 6,        
+            "n_splits": 5,        
             "val_size": 0.2,
         }
     },
